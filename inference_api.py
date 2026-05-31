@@ -11,6 +11,10 @@ import numpy as np
 
 app = FastAPI(title="Dental Image Classifier")
 
+@app.get("/")
+async def root():
+    return {"status": "online", "service": "Dental Image Classifier API"}
+
 # Load the model – create dummy if not present
 MODEL_PATH = os.getenv("MODEL_PATH", "ml/dental_classifier.h5")
 if tf is not None and os.path.exists(MODEL_PATH):
