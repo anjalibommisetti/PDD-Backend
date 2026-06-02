@@ -36,10 +36,18 @@ def load_model():
     else:
         model = None
 
+load_model()
+
 def predict(image_bytes: bytes) -> np.ndarray:
     """Return prediction probabilities for the given image bytes.
     If a real model is loaded, use it; otherwise use the deterministic mock.
+    The function ensures the model is loaded on first call if it wasn't
+    loaded at import time.
     """
+    global model
+    # Ensure model is loaded (in case load_model wasn't successful earlier)
+    if model is None:
+        load_model()
     if model is not None:
         # Preprocess image similarly to inference_api
         from PIL import Image
