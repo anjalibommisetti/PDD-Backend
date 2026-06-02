@@ -1,0 +1,10 @@
+[tool.pyrefly]
+# Exclude Pyrefly's own in-memory virtual documents from diagnostics to prevent parse/indentation errors on code snippets
+project-excludes = [
+    "**/__pyrefly_virtual__/**",
+    "c:/__pyrefly_virtual__/**",
+    "__pyrefly_virtual__"
+]
+
+# Suppress diagnostics for missing package source files when type stubs are available
+errors = { missing-source = "ignore" }

@@ -1,7 +1,7 @@
 import os
 import io
 try:
-    import tensorflow as tf
+    import tensorflow as tf  # type: ignore
 except ImportError:  # TensorFlow not available, use fallback
     tf = None
 from fastapi import FastAPI, File, UploadFile, HTTPException
@@ -15,17 +15,17 @@ app = FastAPI(title="Dental Image Classifier")
 async def root():
     return {"status": "online", "service": "Dental Image Classifier API"}
 
+class MockModel:
+    def predict(self, x):
+        probs = np.random.rand(7)
+        probs = probs / probs.sum()
+        return np.expand_dims(probs, axis=0)
+
 # Load the model – create dummy if not present
 MODEL_PATH = os.getenv("MODEL_PATH", "ml/dental_classifier.h5")
 if tf is not None and os.path.exists(MODEL_PATH):
     model = tf.keras.models.load_model(MODEL_PATH)
 else:
-    # Fallback mock model when TensorFlow is unavailable
-    class MockModel:
-        def predict(self, x):
-            probs = np.random.rand(7)
-            probs = probs / probs.sum()
-            return np.expand_dims(probs, axis=0)
     model = MockModel()
 
 class_names = [
