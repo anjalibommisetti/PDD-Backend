@@ -1,3 +1,9 @@
+# Explicitly set search paths for Python module resolution
+disable-search-path-heuristics = true
+search-path = [
+    "."
+]
+
 [tool.pyrefly]
 # Exclude Pyrefly's own in-memory virtual documents from diagnostics to prevent parse/indentation errors on code snippets
 project-excludes = [
@@ -8,3 +14,11 @@ project-excludes = [
 
 # Suppress diagnostics for missing package source files when type stubs are available
 errors = { missing-source = "ignore" }
+
+# Explicitly set search paths for Python module resolution
+disable-search-path-heuristics = true
+search-path = [
+    "."
+]
+
+

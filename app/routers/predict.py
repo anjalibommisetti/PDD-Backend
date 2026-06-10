@@ -1,5 +1,6 @@
 from fastapi import APIRouter, File, UploadFile
-from services.predictor import predict
+from app.services.predictor import predict
+
 
 router = APIRouter()
 

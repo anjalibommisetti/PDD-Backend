@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.routers import predict, dataset, health
-from app.services.predictor import predictor
+from app.services import predictor
+
 
 
 @asynccontextmanager
