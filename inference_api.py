@@ -15,56 +15,73 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Class names in the SAME alphabetical order Keras reads the dataset/ folders.
+# Keras sorts folder names alphabetically:
+#   Calculus, Data caries, Gingivitis, Mouth Ulcer, Tooth Discoloration, hypodontia
+# We map each to a user-friendly display name:
 class_names = [
     "Calculus",
     "Early Childhood Caries",
     "Gingivitis",
+    "Mouth Ulcer",
     "Tooth Discoloration",
-    "Ulcers",
     "Hypodontia",
 ]
+
 
 @app.get("/")
 async def root():
     return {"status": "online", "service": "Dental Image Classifier API"}
 
+
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     content = await file.read()
-    
-    # Run dataset similarity prediction
     probs = predictor_predict(content)
-    
-    idx = int(np.argmax(probs))
-    risk_score = int(probs.max() * 100)
-    risk_level = "Low"
-    if risk_score >= 70:
-        risk_level = "High"
-    elif risk_score >= 40:
-        risk_level = "Medium"
 
+    # Build per-class results
     all_classes = []
     for label, conf in zip(class_names, probs):
-        detected = conf >= 0.3
+        detected = bool(conf >= 0.5)
         severity = "None"
         if conf >= 0.75:
             severity = "Severe"
-        elif conf >= 0.5:
+        elif conf >= 0.60:
             severity = "Moderate"
-        elif conf >= 0.3:
+        elif conf >= 0.50:
             severity = "Mild"
         all_classes.append({
             "label": label,
-            "confidence": float(conf),
+            "confidence": round(float(conf), 3),
             "detected": detected,
             "severity": severity,
         })
 
-    return JSONResponse(
-        content={
-            "status": "success",
-            "all_classes": all_classes,
-            "risk_score": risk_score,
-            "risk_level": risk_level,
-        }
-    )
+    detected_classes = [c for c in all_classes if c["detected"]]
+
+    # Risk scoring
+    if not detected_classes:
+        risk_score = 5
+        risk_level = "Healthy"
+    else:
+        top = max(detected_classes, key=lambda x: x["confidence"])
+        base_score = int(top["confidence"] * 100)
+        extra = (len(detected_classes) - 1) * 5
+        risk_score = min(base_score + extra, 100)
+
+        if risk_score >= 75:
+            risk_level = "High"
+        elif risk_score >= 50:
+            risk_level = "Medium"
+        elif risk_score >= 25:
+            risk_level = "Low"
+        else:
+            risk_level = "Minimal"
+
+    return JSONResponse(content={
+        "status": "success",
+        "all_classes": all_classes,
+        "detected_only": detected_classes,
+        "risk_score": risk_score,
+        "risk_level": risk_level,
+    })

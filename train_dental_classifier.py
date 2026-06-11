@@ -5,8 +5,9 @@ from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, models
-from tensorflow.keras.utils import image_dataset_from_directory
+layers = tf.keras.layers
+models = tf.keras.models
+image_dataset_from_directory = tf.keras.utils.image_dataset_from_directory
 
 
 def build_model(input_shape=(224, 224, 3), num_classes=2):

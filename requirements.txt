@@ -6,4 +6,4 @@ numpy>=1.26.4
 python-multipart==0.0.9
 flask
 requests
-
+scikit-learn
