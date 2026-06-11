@@ -1,52 +1,34 @@
+# app/services/predictor.py
 import os
 import io
 import numpy as np
 from PIL import Image
-from typing import Optional
+import tensorflow as tf
 
-# Global cache variables
-dataset_hashes = None
-dataset_labels = None
+MODEL_PATH = "ml/dental_model.h5"
+IMG_SIZE = (224, 224)
 
-class_names = [
-    "Calculus",
-    "Early Childhood Caries",
-    "Gingivitis",
-    "Tooth Discoloration",
-    "Ulcers",
-    "Hypodontia",
-]
-class_to_idx = {name: i for i, name in enumerate(class_names)}
-
-def dhash(image: Image.Image) -> np.ndarray:
-    # Resize to 9x8 and convert to grayscale
-    img = image.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-    pixels = np.array(img, dtype=np.int16)
-    # Compute horizontal gradients
-    diff = pixels[:, 1:] > pixels[:, :-1]
-    return diff.flatten()
+# Global model cache
+_model = None
 
 def load_model():
-    """Load the precomputed dataset hashes."""
-    global dataset_hashes, dataset_labels
-    cache_path = os.getenv("HASH_CACHE_PATH", "ml/dataset_hashes.npz")
-    if os.path.exists(cache_path):
+    """Load the trained CNN model dynamically if available."""
+    global _model
+    if _model is not None:
+        return _model
+    if os.path.exists(MODEL_PATH):
         try:
-            data = np.load(cache_path, allow_pickle=True)
-            dataset_hashes = data["hashes"]
-            dataset_labels = data["labels"]
-            print(f"[INFO] Loaded {len(dataset_hashes)} dataset hashes for similarity prediction.")
+            _model = tf.keras.models.load_model(MODEL_PATH)
+            print(f"[INFO] Loaded CNN model from {MODEL_PATH}")
+            return _model
         except Exception as e:
-            print(f"[ERROR] Failed to load hash cache: {e}")
-            dataset_hashes = None
-            dataset_labels = None
+            print(f"[ERROR] Failed to load CNN model: {e}")
     else:
-        print("[WARNING] Hash cache not found. Prediction will fall back to deterministic mock.")
-
-# Initialize on import
-load_model()
+        print(f"[WARNING] CNN model file not found at {MODEL_PATH}")
+    return None
 
 class DeterministicMockModel:
+    """Fallback deterministic mock model to return stable, randomized probabilities."""
     def __init__(self, image_bytes: bytes):
         import hashlib
         h = hashlib.sha256(image_bytes).hexdigest()
@@ -56,48 +38,37 @@ class DeterministicMockModel:
     def predict(self) -> np.ndarray:
         probs = self.rng.random(6)
         probs = probs / probs.sum()
-        return np.expand_dims(probs, axis=0)
+        return probs
 
 def predict(image_bytes: bytes) -> np.ndarray:
-    """Find the closest matching image in the dataset using dHash similarity.
-    If the dataset cache is not loaded, falls back to the deterministic mock.
+    """Predict the class probabilities of a dental image using the CNN model.
+    Falls back to a deterministic mock on errors or if the model isn't trained yet.
     """
-    global dataset_hashes, dataset_labels
-    if dataset_hashes is None or dataset_labels is None:
-        # Try loading again in case it was built since import
-        load_model()
-        
-    if dataset_hashes is not None and dataset_labels is not None and len(dataset_hashes) > 0:
+    model = load_model()
+    if model is not None:
         try:
-            # Load and hash the input image
-            img = Image.open(io.BytesIO(image_bytes))
-            query_hash = dhash(img)
+            img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            img = img.resize(IMG_SIZE)
+            arr = np.array(img, dtype=np.float32) / 255.0
+            arr = np.expand_dims(arr, axis=0)  # shape: (1, 224, 224, 3)
+            probs = model.predict(arr)[0]      # shape: (6,)
             
-            # Compute Hamming distance to all cached hashes
-            # dataset_hashes is shape (N, 64), query_hash is shape (64,)
-            distances = np.count_nonzero(dataset_hashes != query_hash, axis=1)
-            best_match_idx = np.argmin(distances)
-            min_distance = distances[best_match_idx]
-            matched_label = dataset_labels[best_match_idx]
-            
-            # Calculate similarity percentage (64 bits total)
-            similarity = 1.0 - (min_distance / 64.0)
-            
-            # Construct probability output
-            probs = np.zeros(6)
-            idx = class_to_idx.get(matched_label, 0)
-            probs[idx] = max(0.5, similarity) # Match probability
-            
-            # Distribute remaining probability among other classes
-            remaining = 1.0 - probs[idx]
-            for i in range(6):
-                if i != idx:
-                    probs[i] = remaining / 5.0
-            return probs
+            # Reorder CNN probabilities (alphabetical sorted class names from dataset)
+            # to match the order of class names in inference_api.py:
+            # CNN classes: [Calculus, Data caries, Gingivitis, Mouth Ulcer, Tooth Discoloration, hypodontia]
+            # API classes: [Calculus, Early Childhood Caries, Gingivitis, Tooth Discoloration, Ulcers, Hypodontia]
+            ordered_probs = np.array([
+                probs[0],  # Calculus -> Calculus
+                probs[1],  # Data caries -> Early Childhood Caries
+                probs[2],  # Gingivitis -> Gingivitis
+                probs[4],  # Tooth Discoloration -> Tooth Discoloration
+                probs[3],  # Mouth Ulcer -> Ulcers
+                probs[5],  # hypodontia -> Hypodontia
+            ], dtype=np.float32)
+            return ordered_probs
         except Exception as e:
-            print(f"[ERROR] Prediction error: {e}")
-            # Fall through to mock on error
+            print(f"[ERROR] Prediction failed using CNN model: {e}. Falling back to mock.")
             
     # Mock fallback
     mock = DeterministicMockModel(image_bytes)
-    return mock.predict()[0]
+    return mock.predict()
