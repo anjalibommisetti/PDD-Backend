@@ -1,8 +1,9 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
-
-# TensorFlow==2.16.1  # removed due to incompatibility with Python 3.14
+tensorflow==2.16.1
 Pillow>=10.3.0
 numpy>=1.26.4
 python-multipart==0.0.9
 flask
+requests
+

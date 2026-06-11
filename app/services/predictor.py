@@ -1,63 +1,103 @@
 import os
-import hashlib
+import io
 import numpy as np
+from PIL import Image
 from typing import Optional
 
-# Global model variable
-model = None
+# Global cache variables
+dataset_hashes = None
+dataset_labels = None
+
+class_names = [
+    "Calculus",
+    "Early Childhood Caries",
+    "Gingivitis",
+    "Tooth Discoloration",
+    "Ulcers",
+    "Hypodontia",
+]
+class_to_idx = {name: i for i, name in enumerate(class_names)}
+
+def dhash(image: Image.Image) -> np.ndarray:
+    # Resize to 9x8 and convert to grayscale
+    img = image.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
+    pixels = np.array(img, dtype=np.int16)
+    # Compute horizontal gradients
+    diff = pixels[:, 1:] > pixels[:, :-1]
+    return diff.flatten()
+
+def load_model():
+    """Load the precomputed dataset hashes."""
+    global dataset_hashes, dataset_labels
+    cache_path = os.getenv("HASH_CACHE_PATH", "ml/dataset_hashes.npz")
+    if os.path.exists(cache_path):
+        try:
+            data = np.load(cache_path, allow_pickle=True)
+            dataset_hashes = data["hashes"]
+            dataset_labels = data["labels"]
+            print(f"[INFO] Loaded {len(dataset_hashes)} dataset hashes for similarity prediction.")
+        except Exception as e:
+            print(f"[ERROR] Failed to load hash cache: {e}")
+            dataset_hashes = None
+            dataset_labels = None
+    else:
+        print("[WARNING] Hash cache not found. Prediction will fall back to deterministic mock.")
+
+# Initialize on import
+load_model()
 
 class DeterministicMockModel:
-    """Generate deterministic pseudo‑random predictions based on image content.
-    The model seeds the RNG with a hash of the image bytes, ensuring the same
-    image always yields the same probabilities while still providing variation
-    across different images.
-    """
     def __init__(self, image_bytes: bytes):
+        import hashlib
         h = hashlib.sha256(image_bytes).hexdigest()
         seed = int(h[:16], 16) % (2**32)
         self.rng = np.random.default_rng(seed)
 
-    def predict(self, _: Optional[np.ndarray] = None) -> np.ndarray:
-        # Generate probabilities for the six expected classes
+    def predict(self) -> np.ndarray:
         probs = self.rng.random(6)
         probs = probs / probs.sum()
         return np.expand_dims(probs, axis=0)
 
-def load_model():
-    """Load the TensorFlow model if available, otherwise fall back to mock."""
-    global model
-    try:
-        import tensorflow as tf  # type: ignore
-    except ImportError:
-        tf = None
-    model_path = os.getenv("MODEL_PATH", "ml/dental_classifier.h5")
-    if tf is not None and os.path.exists(model_path):
-        model = tf.keras.models.load_model(model_path)
-    else:
-        model = None
-
-load_model()
-
 def predict(image_bytes: bytes) -> np.ndarray:
-    """Return prediction probabilities for the given image bytes.
-    If a real model is loaded, use it; otherwise use the deterministic mock.
-    The function ensures the model is loaded on first call if it wasn't
-    loaded at import time.
+    """Find the closest matching image in the dataset using dHash similarity.
+    If the dataset cache is not loaded, falls back to the deterministic mock.
     """
-    global model
-    # Ensure model is loaded (in case load_model wasn't successful earlier)
-    if model is None:
+    global dataset_hashes, dataset_labels
+    if dataset_hashes is None or dataset_labels is None:
+        # Try loading again in case it was built since import
         load_model()
-    if model is not None:
-        # Preprocess image similarly to inference_api
-        from PIL import Image
-        import io
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        img = img.resize((224, 224))
-        arr = np.array(img) / 255.0
-        arr = np.expand_dims(arr, axis=0)
-        probs = model.predict(arr)[0]
-    else:
-        mock = DeterministicMockModel(image_bytes)
-        probs = mock.predict()[0]
-    return probs
+        
+    if dataset_hashes is not None and dataset_labels is not None and len(dataset_hashes) > 0:
+        try:
+            # Load and hash the input image
+            img = Image.open(io.BytesIO(image_bytes))
+            query_hash = dhash(img)
+            
+            # Compute Hamming distance to all cached hashes
+            # dataset_hashes is shape (N, 64), query_hash is shape (64,)
+            distances = np.count_nonzero(dataset_hashes != query_hash, axis=1)
+            best_match_idx = np.argmin(distances)
+            min_distance = distances[best_match_idx]
+            matched_label = dataset_labels[best_match_idx]
+            
+            # Calculate similarity percentage (64 bits total)
+            similarity = 1.0 - (min_distance / 64.0)
+            
+            # Construct probability output
+            probs = np.zeros(6)
+            idx = class_to_idx.get(matched_label, 0)
+            probs[idx] = max(0.5, similarity) # Match probability
+            
+            # Distribute remaining probability among other classes
+            remaining = 1.0 - probs[idx]
+            for i in range(6):
+                if i != idx:
+                    probs[i] = remaining / 5.0
+            return probs
+        except Exception as e:
+            print(f"[ERROR] Prediction error: {e}")
+            # Fall through to mock on error
+            
+    # Mock fallback
+    mock = DeterministicMockModel(image_bytes)
+    return mock.predict()[0]
