@@ -6,7 +6,7 @@ train: ./images/train
 val: ./images/val
 
 # Path to YAML file containing class names
-nc: 1
+nc: 4
 names: ['Caries','Ulcer', 'Tooth Discoloration','Gingivitis']
 
 # YOLOv5 model architecture
@@ -21,7 +21,7 @@ model:
   # Model hyperparameters
   hyperparameters:
     # Number of classes
-    nc: 1
+    nc: 4
     # Number of input channels
     channels: 3
     # Anchor box scaling factor
