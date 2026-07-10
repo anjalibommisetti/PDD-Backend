@@ -28,6 +28,15 @@ class_names = [
     "Hypodontia",
 ]
 
+precautions_map = {
+    "Calculus": "Schedule a professional dental cleaning to remove tartar build-up. Maintain daily brushing and flossing.",
+    "Early Childhood Caries": "Schedule a dentist appointment immediately. Avoid sugary drinks and ensure proper brushing with fluoride toothpaste.",
+    "Gingivitis": "Improve oral hygiene by brushing twice daily and flossing. Use an antiseptic mouthwash. See a dentist for a checkup.",
+    "Mouth Ulcer": "Avoid spicy and acidic foods. Use a soft-bristled toothbrush. If it persists for more than 2 weeks, consult a dentist.",
+    "Tooth Discoloration": "Limit coffee, tea, and staining foods. Consider a professional teeth whitening consultation with a dentist.",
+    "Hypodontia": "Consult an orthodontist or prosthodontist for evaluation and potential restorative options like implants or bridges."
+}
+
 
 @app.get("/")
 async def root():
@@ -59,6 +68,10 @@ async def predict(file: UploadFile = File(...)):
 
     detected_classes = [c for c in all_classes if c["detected"]]
 
+    precautions_list = []
+    for dc in detected_classes:
+        precautions_list.append(precautions_map.get(dc["label"], "Consult a dentist for professional advice."))
+
     # Risk scoring
     if not detected_classes:
         risk_score = 5
@@ -78,10 +91,14 @@ async def predict(file: UploadFile = File(...)):
         else:
             risk_level = "Minimal"
 
+    harmful_percentage = f"{risk_score}%"
+
     return JSONResponse(content={
         "status": "success",
         "all_classes": all_classes,
         "detected_only": detected_classes,
         "risk_score": risk_score,
         "risk_level": risk_level,
+        "harmful_percentage": harmful_percentage,
+        "precautions": list(set(precautions_list))
     })
