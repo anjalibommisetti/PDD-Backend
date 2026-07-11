@@ -70,7 +70,7 @@ async def predict(file: UploadFile = File(...)):
 
     precautions_list = []
     for dc in detected_classes:
-        precautions_list.append(precautions_map.get(dc["label"], "Consult a dentist for professional advice."))
+        precautions_list.append(precautions_map.get(str(dc["label"]), "Consult a dentist for professional advice."))
 
     # Risk scoring
     if not detected_classes:
